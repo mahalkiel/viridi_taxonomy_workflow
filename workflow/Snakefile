@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""
+Reads Based Metagenomics Workflow Snakefile
+Before running this workflow:
+
+1. You must install all necessary tools and
+modify the respective paths in config.yml file.
+This is a potentially non-trivial task.
+2. Install and and activate the conda environment in 
+specified in snakemake.yml (in the config folder)
+
+Useful commands:
+    I advise you consult the notes 
+    and Snakemake docs.
+    Further, it's helpful to set up a default profile and run that
+    rather than putting in many commands each run.
+$conda activate snakemake
+unlock in case there was an issue last run: 
+$snakemake --unlock
+dry run to check what files are missing/will be created if all goes well:
+$snakemake -n
+run: (modify the number of cores for your environment)
+$nohup snakemake --use-conda --cores 200 &
+@ Author: Michael Snyder
+@ The Mackelprang Lab, California State University, Northridge
+@ Created: 10th October 2022
+"""
+# python dependencies:
+import os
+import pickle
+
+# global variables:
+
+configfile: "config/config.yml"
+DIRECTORY = config['DIRECTORY']
+MEGAN_DAA_DIR = config['MEGAN_DAA_DIR']
+SUPPORT_OFF_DAA_DIR = config['SUPPORT_OFF_DAA_DIR']
+KEGG_DB = config['KEGG_DB']
+PROJECT = config['PROJECT']
+REFSEQ_DB = config['REFSEQ_DB']
+MEGAN_DB = config['MEGAN_DB']
+DBCAN_OUTS = config['DBCAN_OUTS'].split()
+DBCAN_DB = config['DBCAN_DB']
+
+
+
+def samplenamemaker(directory):
+    """Return DAA sample names from the configured input directory."""
+    my_file = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+    basename = []
+    for fn in my_file:
+        if fn.endswith('.daa'):
+            index = fn.find('.daa')
+            base = fn[:index]
+            basename.append(base)
+    return(basename)
+
+
+# the basename of each sample is the {sample} wildcard
+sampleroots = samplenamemaker(SUPPORT_OFF_DAA_DIR)
+
+
+# path to outputs
+# uncomment only the target files
+# snakemake will run all needed steps to output them
+rule all:
+    input:
+        ## DBCAN:
+        #expand("results/dbcan_out/{sample}_{dbcanouts}", sample = sampleroots, dbcanouts = DBCAN_OUTS),
+        ## DIAMOND VS REFSEQ:
+        expand("results/tax_out_sup_off/{daa_files}.csv", daa_files = sampleroots),
+        #expand("results/taxonomy_m6/{sample}.m6", sample = sampleroots),
+        #expand("results/taxonomy_out/{sample}.tax", sample = sampleroots)
+        ## DIAMOND VS CAZYME DB ONLY:
+        #expand("results/cazy_annotated/{sample}.cazy.m8", sample = sampleroots),
+        #expand("results/cazy_annotated/{sample}.outu.cazy.m8", sample = sampleroots)
+        #expand("results/cazy_annotated/{sample}.filt.cazy.m8", sample = sampleroots),
+        ## DIAMOND VS KEGG DATABASE:
+        #expand("results/kegg_out/{sample}.m8", sample = sampleroots),
+        #expand("results/kegg_out/{sample}.outu.m8", sample = sampleroots)
+        ## CREATE FEATURETABLES:
+        #"results/featuretables/tax_counts.csv"
+        #"results/featuretables/kegg_outm_counts.txt",
+        #"results/featuretables/kegg_outu_counts.txt",
+        #"results/featuretables/cazy_u_counts.csv",
+        #"results/featuretables/cazy_m_counts.csv"
+        ## MEAGANIZE
+        #expand("results/rma_files/{sample}.rma6", sample = sampleroots)
+
+        
+# there must be a better way to acheive this than to mv each file - with prefixes? with setting the output file?
+# --out_dir dbcanouts 
+
+rule diamond_cazy:
+    output:
+        out="results/cazy_annotated/{sample}.cazy.m8"
+    input:
+        fname="results/fasta_files/{sample}.cleaned.outm.fa"
+    params:
+        command="blastx",
+        db=DBCAN_DB,
+        max_target_seqs="1", #only report the best hit
+        sensitivity="--fast",
+        blocksize="20",
+        index_chunks="1"
+    log:
+        outm="results/diamond_logs/cazy/{sample}_outm2.log"
+    shell:
+        """
+        diamond {params.command} \
+        -q {input.fname} \
+        -d {params.db} -o {output} \
+        --max-target-seqs {params.max_target_seqs} \
+        -b {params.blocksize} \
+        -c {params.index_chunks} \
+        {params.sensitivity} >> {log.outm} 2>&1
+        """
+
+rule diamond_taxonomy:
+    output:
+        out="results/taxonomy_m6/{sample}.m6"
+    input:
+        fname=os.path.join(DIRECTORY, "{sample}.fasta")
+    params:
+        command="blastx",
+        db=REFSEQ_DB,
+        max_target_seqs="5", #only report 5 best hits
+        sensitivity="--fast",
+        blocksize="20",
+        index_chunks="1",
+        out_format="6 qseqid sseqid evalue bitscore staxids" #custom output, faster
+    log:
+        outu="results/diamond_logs/taxonomy/{sample}_m6.log",
+    shell:
+        """
+        diamond {params.command} \
+        -q {input.fname} \
+        -d {params.db} -o {output} \
+        --max-target-seqs {params.max_target_seqs} \
+        -b {params.blocksize} \
+        -c {params.index_chunks} \
+        -f {params.out_format} \
+        {params.sensitivity} >> {log.outu} 2>&1
+        """
+
+rule diamond_taxonomy_taxformat:
+    output:
+        out="results/taxonomy_out/{sample}.tax"
+    input:
+        fname=os.path.join(DIRECTORY, "{sample}.fasta")
+    params:
+        command="blastx",
+        db=REFSEQ_DB,
+        max_target_seqs="5", #only LCA 5 best hits
+        sensitivity="--fast",
+        blocksize="20",
+        index_chunks="1",
+        out_format="100"
+    log:
+        outu="results/diamond_logs/taxonomy/{sample}_tax.log",
+    shell:
+        """
+        diamond {params.command} \
+        -q {input.fname} \
+        -d {params.db} -o {output} \
+        --max-target-seqs {params.max_target_seqs} \
+        -b {params.blocksize} \
+        -c {params.index_chunks} \
+        -f {params.out_format} \
+        {params.sensitivity} >> {log.outu} 2>&1
+        """
+
+
+rule diamond_v_kegg:
+    output:
+        out="results/kegg_out/{sample}.m8"
+    input:
+        fname="results/fasta_files/{sample}.cleaned.outm.fa"
+    params:
+        command="blastx",
+        db=KEGG_DB,
+        max_target_seqs="1", #only report the best hit
+        sensitivity="--fast",
+        blocksize="20",
+        index_chunks="1"
+    threads: workflow.cores
+    log:
+        outm="results/diamond_logs/kegg/{sample}_outm.log"
+    shell:
+        """
+        diamond {params.command} \
+        -q {input} \
+        -d {params.db} \
+        -o {output} \
+        -k {params.max_target_seqs} \
+        -b {params.blocksize} \
+        -c {params.index_chunks} \
+        {params.sensitivity} >> {log.outm} 2>&1
+        """
+
+
+rule diamond_v_kegg_unmerged_reads:
+    output:
+        out="results/kegg_out/{sample}.outu.m8",
+    input:
+        fname="results/fasta_files/{sample}.cleaned.outu.fa"
+    params:
+        command="blastx",
+        db=KEGG_DB,
+        max_target_seqs="1", #only report the best hit
+        sensitivity="--fast",
+        blocksize="20",
+        index_chunks="1"
+    threads: workflow.cores
+    log:
+        outu="results/diamond_logs/kegg/{sample}_outu.log"    
+    shell:
+        """
+        diamond {params.command} \
+        -q {input.fname} \
+        -d {params.db} \
+        -o {output} \
+        -k {params.max_target_seqs} \
+        -b {params.blocksize} \
+        -c {params.index_chunks} \
+        {params.sensitivity} >> {log.outu} 2>&1
+        """
+
+rule meganize:
+    output:
+        out="results/rma_files/{sample}.rma6"
+    input:
+        infile=os.path.join(MEGAN_DAA_DIR, "{sample}.daa")
+    conda:
+        "envs/megan_env.yml"
+    params:
+        lcaAlgorithm="weighted",
+        mapDB=MEGAN_DB,
+        threads="16"
+    shell:
+        """
+        daa2rma \
+        -i {input.infile} \
+        -o {output.out} \
+        -alg {params.lcaAlgorithm} \
+        -mdb {params.mapDB} \
+        -t {params.threads}
+        """
+
+
+rule daa_meganizerSuppOffpct:
+    output:
+        touch("results/meganized_supp_off_done/{daa_files}_suppOff_1.done")
+    input:
+        os.path.join(SUPPORT_OFF_DAA_DIR, "{daa_files}.daa")
+    conda:
+        "envs/megan_env.yml"
+    threads: 16
+    params:
+        topPercent="1.0",
+        lcaAlgorithm="weighted",
+        mapDB=MEGAN_DB,
+        minScore="10",
+        minSupportPercent="0"
+    shell:
+        """
+        daa-meganizer \
+        -i {input} \
+        -t {threads} \
+        -alg {params.lcaAlgorithm} \
+        -mdb {params.mapDB} \
+        -top {params.topPercent} \
+        -supp {params.minSupportPercent} \
+        -ms {params.minScore}
+        """
+
+
+rule daa2infoSupportOff:
+    output:
+        "results/tax_out_sup_off/{daa_files}.csv"
+    input:
+        "results/meganized_supp_off_done/{daa_files}_suppOff_1.done"
+    threads: 1
+    params:
+        class_to_count="Taxonomy",
+        infile=os.path.join(SUPPORT_OFF_DAA_DIR, "{daa_files}.daa")
+    conda:
+        "envs/megan_env.yml"
+    shell:
+        """
+        daa2info \
+        -i {params.infile} \
+        -o {output} \
+        -c2c {params.class_to_count}
+        """
+
+    

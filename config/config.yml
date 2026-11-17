@@ -1,0 +1,28 @@
+PROJECT: viridi
+
+# Run Snakemake from the project root to use these relative paths.
+# Put your files at these locations or replace each value with your own path.
+
+# Directory containing paired <sample>_R1.fastq and <sample>_R2.fastq files.
+SRCDIR: resources/reads
+# Bowtie2 index prefix, without the .1.bt2 or .1.bt2l suffix.
+BT2_IDX: resources/bowtie2/reference
+
+# Directory containing precomputed <sample>.fasta.daa files.
+DAA_FILES_DIR: resources/daa
+# Directory containing <sample>.daa files for MEGAN conversion.
+MEGAN_DAA_DIR: resources/megan_daa
+# Directory containing <sample>.daa files for the support-off taxonomy targets.
+SUPPORT_OFF_DAA_DIR: resources/support_off_daa
+# Directory containing <sample>.fasta files for DIAMOND taxonomy rules.
+DIRECTORY: resources/fasta
+
+# Reference database files for the corresponding analysis rules.
+REFSEQ_DB: resources/db/refseq.dmnd
+KEGG_DB: resources/db/kegg.dmnd
+MEGAN_DB: resources/db/megan-map.db
+DBCAN_DB: resources/db/CAZy.dmnd
+CAZYME_DB: resources/db/CAZy.dmnd
+
+DBCAN_OUTS: 'uniInput diamond.out eCAMI.out hmmer.out prodigal.gff overview.txt'
+WORKDIR:  # Leave blank to use the workflow's working directory.
