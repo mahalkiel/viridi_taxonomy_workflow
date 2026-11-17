@@ -1,3 +1,0 @@
-WorkflowErrorin line 34 of /home/msnyder/viridi_workflow/workflow/Snakefile:
-Workflow defines configfile config/config.yml but it is not present or accessible.
-  File "/home/msnyder/viridi_workflow/workflow/Snakefile", line 34, in <module>
